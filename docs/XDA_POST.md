@@ -44,7 +44,7 @@ allowlist is loaded back into memory by the kernel itself.
 - Keep the stock image around to revert: `adb shell dd if=/dev/block/mmcblk0p33 of=/sdcard/boot_stock.img bs=4096`.
 - First boot may take a bit; don't reboot right away.
 
-Full changelog, build log and troubleshooting: docs/KERNELS.md; source on GitHub (link).
+Full changelog, build log and troubleshooting: docs/KERNELS.md; source on GitHub: https://github.com/plmzaq2112/kernel-ksu-dandelion (Releases: https://github.com/plmzaq2112/kernel-ksu-dandelion/releases).
 All GPL-2.0; thanks to the KernelSU team (tiann) — not affiliated with Xiaomi/Google.
 
 Big thanks to the KernelSU + GKI-patch tooling communities!
