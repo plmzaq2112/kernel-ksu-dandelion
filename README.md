@@ -35,9 +35,15 @@ across reboots.
 > KernelSU compiled in. The adjust image works only on this boot image layout
 > (page_size 2048 / header v2, which is what the stock MT6765 boot images use).
 
+## Download
+
+Grab the release assets from the **Releases** page of this repo:
+`boot_ksu43_load.img` (+ `.sha256`), `KernelSU_v3.3.0_32601_gkipatched_v2only.apk` (+ `.idsig`).
+Place the image next to `flash/flash.bat` / `flash/flash.sh` (they look for it there).
+
 ## Install
 
-1. Unlock bootloader, keep `boot-4.19.275-mt6765-ksu25-perm` image in the repo release.
+1. Unlock bootloader.
 2. On Windows: `flash\flash.bat` — or do it by hand (Linux/macOS `flash\flash.sh`),
    or adb-only:
    ```bash
@@ -57,7 +63,7 @@ across reboots.
 The stock KernelSU Manager APK is signed with modern v3 sig; the `is_manager_apk` check on
 this non-GKI kernel catches the v3-only signature and refuses to crown it. You **must** use:
 
-> **`KernelSU_v3.3.0_32601_gkipatched_v2only.apk`** (in `apk/`)
+> **`KernelSU_v3.3.0_32601_gkipatched_v2only.apk`** (on the Releases page, `apk/` keeps its sha256)
 
 It is the same GKI-patched v3.3.0 app, **re-signed with v2-only scheme**
 (`apksigner --v2-signing-enabled true --v3-signing-enabled false`), so the kernel recognizes it.
@@ -66,8 +72,8 @@ It is the same GKI-patched v3.3.0 app, **re-signed with v2-only scheme**
 ## Repository layout
 
 ```
-flash/            boot_ksu43_load.img (+ sha256) and flash scripts
-apk/              required resign (v2-only) Manager app
+flash/            boot_ksu43_load.img.sha256 and flash scripts  (image itself: Releases page)
+apk/              required resign (v2-only) Manager app .sha256     (apk itself: Releases page)
 patches/          ksu43_kernelsu.patch  — clean upstream diff (KernelSU v3.3.0 -> ours, 7 files)
 patches/final-kernel-patches/  — the 7 modified files in full
 scripts/          local build scripts (toolchain/tool paths are machine-specific — adjust)

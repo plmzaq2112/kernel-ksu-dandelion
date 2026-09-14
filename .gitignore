@@ -1,0 +1,4 @@
+# Binaries live in GitHub Releases (see https://github.com/a12bbb/kernel-ksu-dandelion/releases)
+*.apk
+*.idsig
+*.img
