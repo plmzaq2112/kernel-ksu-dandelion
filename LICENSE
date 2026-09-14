@@ -1,0 +1,10 @@
+This project (kernel patches, build scripts, boot image) is licensed under the
+GNU General Public License, version 2, as required by the Linux kernel source it
+is derived from.
+
+See the full text at: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+
+SPDX-License-Identifier: GPL-2.0-only
+
+The included KernelSU Manager APK is a resign of the GPL-2.0 KernelSU project
+(https://github.com/tiann/KernelSU), Copyright the KernelSU authors.

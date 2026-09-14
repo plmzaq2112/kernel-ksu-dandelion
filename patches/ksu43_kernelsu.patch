@@ -1,0 +1,367 @@
+--- a/core/init.c
++++ b/core/init.c
+@@ -174,6 +174,8 @@
+ 
+         ksu_throne_tracker_init();
+ 
++        track_throne(false);
++
+         ksu_ksud_init();
+ 
+         ksu_file_wrapper_init();
+@@ -228,6 +230,6 @@
+ MODULE_DESCRIPTION("Android KernelSU");
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
+ MODULE_IMPORT_NS("VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");
+-#else
++#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
+ MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+ #endif
+--- a/hook/arm64/syscall_hook.c
++++ b/hook/arm64/syscall_hook.c
+@@ -11,6 +11,11 @@
+ #include "klog.h" // IWYU pragma: keep
+ 
+ syscall_fn_t *ksu_syscall_table = NULL;
++// Pristine copy of sys_call_table taken before any patch. Hooks call the
++// "original" implementation through this so directly-patched slots don't
++// recurse into the patched entry.
++static syscall_fn_t ksu_syscall_table_orig_storage[__NR_syscalls];
++syscall_fn_t *ksu_syscall_table_orig = ksu_syscall_table_orig_storage;
+ int ksu_dispatcher_nr = -1;
+ 
+ // Hook registration table — read with READ_ONCE from tracepoint/dispatcher
+@@ -197,6 +202,63 @@
+     return READ_ONCE(syscall_hooks[nr]) != NULL;
+ }
+ 
++// Direct sys_enter replacement for kernels without CONFIG_FTRACE_SYSCALLS.
++// Patched straight into the real syscall table slot: reads the syscall number
++// back from the pt_regs (arm64 el0 entry always sets regs->syscallno == scno),
++// then routes through the same registration table as the dispatcher.
++static long __nocfi ksu_direct_syscall_entry(const struct pt_regs *regs)
++{
++    int nr = (int)regs->syscallno;
++
++    if (unlikely(nr < 0 || nr >= __NR_syscalls))
++        return -ENOSYS;
++
++    ksu_syscall_hook_fn fn = READ_ONCE(syscall_hooks[nr]);
++    if (likely(fn))
++        return fn(nr, regs);
++
++    return -ENOSYS;
++}
++
++void ksu_direct_patch_syscalls(void)
++{
++    // Stage 1 (early boot): only the fd-install path. execve/sucompat detour
++    // on every exec of every process (GFP_KERNEL sulog capture, filp_open,
++    // cred overrides) panics during early boot on this MTK kernel (mt6765),
++    // so execve/execveat/faccessat/newfstatat are deferred to stage 2 which
++    // runs after boot_completed when the system is stable.
++    static const int nrs[] = {
++        __NR_setresuid,
++        __NR_reboot,
++    };
++    int i;
++
++    if (!ksu_syscall_table)
++        return;
++
++    for (i = 0; i < ARRAY_SIZE(nrs); i++)
++        ksu_syscall_table_hook(nrs[i], (syscall_fn_t)ksu_direct_syscall_entry, NULL);
++}
++
++void ksu_direct_patch_sucompat_syscalls(void)
++{
++    // Stage 2 (post boot_completed): su redirection. These hooks are too
++    // heavy for the early boot exec storm but fine once the system is up.
++    static const int nrs[] = {
++        __NR_execve,
++        __NR_execveat,
++        __NR_newfstatat,
++        __NR_faccessat,
++    };
++    int i;
++
++    if (!ksu_syscall_table)
++        return;
++
++    for (i = 0; i < ARRAY_SIZE(nrs); i++)
++        ksu_syscall_table_hook(nrs[i], (syscall_fn_t)ksu_direct_syscall_entry, NULL);
++}
++
+ void __init ksu_syscall_hook_init(void)
+ {
+     int ni_slot;
+@@ -209,6 +271,8 @@
+     if (!ksu_syscall_table)
+         return;
+ 
++    memcpy(ksu_syscall_table_orig, ksu_syscall_table, __NR_syscalls * sizeof(syscall_fn_t));
++
+     // Find one ni_syscall slot for the dispatcher
+     if (ksu_find_ni_syscall_slots(&ni_slot, 1) < 1) {
+         pr_err("failed to find ni_syscall slot for dispatcher\n");
+--- a/hook/syscall_hook_manager.c
++++ b/hook/syscall_hook_manager.c
+@@ -5,6 +5,7 @@
+ #include <asm/syscall.h>
+ #include <linux/ptrace.h>
+ #include <linux/slab.h>
++#include <linux/workqueue.h>
+ #include <trace/events/syscalls.h>
+ 
+ #include <linux/version.h>
+@@ -121,6 +122,14 @@
+ }
+ #endif
+ 
++static void ksu_patch_sucompat_worker(struct work_struct *work)
++{
++    pr_info("hook_manager: stage2 sucompat patch (delayed)\n");
++    ksu_direct_patch_sucompat_syscalls();
++}
++
++static DECLARE_DELAYED_WORK(ksu_patch_sucompat_dw, ksu_patch_sucompat_worker);
++
+ void __init ksu_syscall_hook_manager_init(void)
+ {
+     int ret;
+@@ -133,13 +142,18 @@
+ 
+     // Register syscall hooks via dispatcher
+     ksu_register_syscall_hook(__NR_setresuid, ksu_hook_setresuid);
++    ksu_register_syscall_hook(__NR_reboot, ksu_direct_reboot_entry);
+     ksu_register_syscall_hook(__NR_execve, ksu_hook_execve);
+     ksu_register_syscall_hook(__NR_execveat, ksu_hook_execveat);
+     ksu_register_syscall_hook(__NR_newfstatat, ksu_hook_newfstatat);
+     ksu_register_syscall_hook(__NR_faccessat, ksu_hook_faccessat);
+ 
+-#ifdef CONFIG_HAVE_SYSCALL_TRACEPOINTS
++#if defined(CONFIG_HAVE_SYSCALL_TRACEPOINTS) && defined(CONFIG_FTRACE_SYSCALLS)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 13, 0)
+     ret = register_trace_prio_sys_enter(ksu_sys_enter_handler, NULL, INT_MIN);
++#else
++    ret = register_trace_sys_enter(ksu_sys_enter_handler, NULL);
++#endif
+ #ifndef CONFIG_KRETPROBES
+     ksu_mark_running_process_locked();
+ #endif
+@@ -150,14 +164,28 @@
+     }
+ #endif
+ 
++#if !defined(CONFIG_HAVE_SYSCALL_TRACEPOINTS) || !defined(CONFIG_FTRACE_SYSCALLS)
++    // No sys_enter tracepoint available: patch the real syscall table slots so
++    // hooks are reached without ftrace/kprobes.
++    ksu_direct_patch_syscalls();
++#endif
++
+     ksu_setuid_hook_init();
+     ksu_sucompat_init();
++
++    // Stage 2 su-compat syscall patch: deferred until boot is stable because
++    // the execve/faccessat/stat detours trigger panics during the early-boot
++    // exec storm on this MTK kernel. 90s after init is well past boot.
++    if (ksu_syscall_table) {
++        schedule_delayed_work(&ksu_patch_sucompat_dw, 90 * HZ);
++        pr_info("hook_manager: stage2 sucompat patch scheduled in 90s\n");
++    }
+ }
+ 
+ void __exit ksu_syscall_hook_manager_exit(void)
+ {
+     pr_info("hook_manager: ksu_hook_manager_exit called\n");
+-#ifdef CONFIG_HAVE_SYSCALL_TRACEPOINTS
++#if defined(CONFIG_HAVE_SYSCALL_TRACEPOINTS) && defined(CONFIG_FTRACE_SYSCALLS)
+     unregister_trace_sys_enter(ksu_sys_enter_handler, NULL);
+     tracepoint_synchronize_unregister();
+     pr_info("hook_manager: sys_enter tracepoint unregistered\n");
+--- a/hook/syscall_hook.h
++++ b/hook/syscall_hook.h
+@@ -7,6 +7,8 @@
+ #endif
+ 
+ extern syscall_fn_t *ksu_syscall_table;
++// Pristine, unpatched copy of sys_call_table (indexed by syscall nr).
++extern syscall_fn_t *ksu_syscall_table_orig;
+ 
+ // Dispatcher slot number in syscall table
+ extern int ksu_dispatcher_nr;
+@@ -48,4 +50,10 @@
+ void ksu_syscall_hook_init(void);
+ void ksu_syscall_hook_exit(void);
+ 
++// Directly patch the real syscall table slots for all registered hooks.
++// Only for kernels built WITHOUT CONFIG_FTRACE_SYSCALLS.
++void ksu_direct_patch_syscalls(void);
++void ksu_direct_patch_sucompat_syscalls(void);
++long ksu_direct_reboot_entry(int orig_nr, const struct pt_regs *regs);
++
+ #endif
+--- a/supercall/supercall.c
++++ b/supercall/supercall.c
+@@ -15,6 +15,7 @@
+ #include "supercall/internal.h"
+ #include "arch.h"
+ #include "util.h"
++#include "hook/syscall_hook.h"
+ #include "klog.h" // IWYU pragma: keep
+ 
+ struct ksu_install_fd_tw {
+@@ -77,6 +78,7 @@
+     kfree(tw);
+ }
+ 
++#ifdef CONFIG_KPROBES
+ static int reboot_handler_pre(struct kprobe *p, struct pt_regs *regs)
+ {
+     struct pt_regs *real_regs = PT_REAL_REGS(regs);
+@@ -94,7 +96,7 @@
+         tw->outp = (int __user *)arg4;
+         tw->cb.func = ksu_install_fd_tw_func;
+ 
+-        if (task_work_add(current, &tw->cb, TWA_RESUME)) {
++        if (task_work_add(current, &tw->cb, true)) {
+             kfree(tw);
+             pr_warn("install fd add task_work failed\n");
+         }
+@@ -107,6 +109,39 @@
+     .symbol_name = REBOOT_SYMBOL,
+     .pre_handler = reboot_handler_pre,
+ };
++#endif
++
++long ksu_direct_reboot_entry(int orig_nr, const struct pt_regs *regs)
++{
++    struct pt_regs *real_regs = (struct pt_regs *)regs;
++    int magic1 = (int)PT_REGS_PARM1(real_regs);
++    int magic2 = (int)PT_REGS_PARM2(real_regs);
++
++    if (magic1 == KSU_INSTALL_MAGIC1 && magic2 == KSU_INSTALL_MAGIC2) {
++        struct ksu_install_fd_tw *tw;
++        unsigned long arg4 = (unsigned long)PT_REGS_SYSCALL_PARM4(real_regs);
++
++        tw = kzalloc(sizeof(*tw), GFP_ATOMIC);
++        if (!tw)
++            return 0;
++
++        tw->outp = (int __user *)arg4;
++        tw->cb.func = ksu_install_fd_tw_func;
++
++        if (task_work_add(current, &tw->cb, true)) {
++            kfree(tw);
++            pr_warn("install fd add task_work failed\n");
++        }
++
++        // Do NOT invoke the real reboot syscall for the magic sequence: the
++        // magic does not match any LINUX_REBOOT_CMD_*, but some MTK/Android
++        // kernels reboot anyway when reboot() is reached with these args.
++        // Report success (fd will be installed when the task_work runs).
++        return 0;
++    }
++
++    return ksu_syscall_table_orig[__NR_reboot](regs);
++}
+ 
+ void __init ksu_supercalls_init(void)
+ {
+@@ -114,16 +149,22 @@
+ 
+     ksu_supercall_dump_commands();
+ 
++#ifdef CONFIG_KPROBES
+     rc = register_kprobe(&reboot_kp);
+     if (rc) {
+         pr_err("reboot kprobe failed: %d\n", rc);
+     } else {
+         pr_info("reboot kprobe registered successfully\n");
+     }
++#else
++    pr_info("KSU: kprobe-free build, fd install via ksud scan\n");
++#endif
+ }
+ 
+ void __exit ksu_supercalls_exit(void)
+ {
++#ifdef CONFIG_KPROBES
+     unregister_kprobe(&reboot_kp);
++#endif
+     ksu_supercall_cleanup_state();
+ }
+--- a/manager/throne_tracker.c
++++ b/manager/throne_tracker.c
+@@ -5,6 +5,7 @@
+ #include <linux/string.h>
+ #include <linux/types.h>
+ #include <linux/version.h>
++#include <linux/workqueue.h>
+ 
+ #include "policy/allowlist.h"
+ #include "manager/apk_sign.h"
+@@ -305,6 +306,17 @@
+     }
+     filp_close(fp, 0);
+ 
++    // Load the persistent allowlist into memory once /data is available.
++    // on_post_fs_data() (REPORT_EVENT post-fs-data) is never delivered by the
++    // userspace Manager on this setup, so the list would otherwise stay empty
++    // after every reboot. ksu_load_allow_list() is idempotent (profiles are
++    // keyed by uid and merged), so a single call here is safe.
++    static bool ksu_allowlist_loaded;
++    if (!ksu_allowlist_loaded) {
++        ksu_load_allow_list();
++        ksu_allowlist_loaded = true;
++    }
++
+     // now update uid list
+     struct uid_data *np;
+     struct uid_data *n;
+@@ -343,9 +355,26 @@
+     }
+ }
+ 
++static struct delayed_work ksu_track_throne_dw;
++static int ksu_track_throne_retries;
++
++static void track_throne_delayed_worker(struct work_struct *work)
++{
++    track_throne(false);
++    if (!ksu_is_manager_appid_valid()) {
++        if (ksu_track_throne_retries++ < 10) {
++            pr_info("KernelSU: manager not found yet, retry in 30s\n");
++            schedule_delayed_work(&ksu_track_throne_dw, msecs_to_jiffies(30000));
++        }
++    }
++}
++
+ void __init ksu_throne_tracker_init()
+ {
+-    // nothing to do
++    ksu_track_throne_retries = 0;
++    INIT_DELAYED_WORK(&ksu_track_throne_dw, track_throne_delayed_worker);
++    schedule_delayed_work(&ksu_track_throne_dw, msecs_to_jiffies(30000));
++    pr_info("KernelSU: scheduled throne tracker retry in 30s\n");
+ }
+ 
+ void __exit ksu_throne_tracker_exit()
+--- a/runtime/boot_event.c
++++ b/runtime/boot_event.c
+@@ -10,6 +10,7 @@
+ #include "runtime/ksud.h"
+ #include "manager/manager_observer.h"
+ #include "manager/throne_tracker.h"
++#include "hook/syscall_hook.h"
+ 
+ bool ksu_module_mounted __read_mostly = false;
+ bool ksu_boot_completed __read_mostly = false;
+@@ -66,6 +67,6 @@
+ {
+     ksu_boot_completed = true;
+     pr_info("on_boot_completed!\n");
+-    track_throne(true);
++    track_throne(false);
+     ksu_selinux_hide_drop_backup_if_unused();
+ }
