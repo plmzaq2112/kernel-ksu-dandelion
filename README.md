@@ -108,6 +108,16 @@ bash scripts/build_ksu25_v2.sh   # expects a MediaTek 4.19 source tree at $OSRC
 | `runtime/boot_event.c` | no force-crown on boot_completed (tracker handles it) |
 | `core/init.c` | early `track_throne(false)` run; `MODULE_IMPORT_NS` gated to ≥5.4 (4.19 has no symbol namespaces) |
 
+## Runtime performance tuning (no-rebuild)
+
+The kernel's compile-time performance features are intentionally left at their **verified #48b
+defaults** — re-enabling THP/KVM/JUMP_LABEL/CE-crypto requires a vmlinux rebuild that boots-panics
+with this KernelSU direct-syscall-table setup (`write to read-only memory`). Gains are shipped as
+**runtime-only add-ons**, auto-applied by the `kernelmods` KSU module at boot (log
+`/data/adb/kernelmods.log`): **eMMC scheduler → `kyber`** (sequential read 294→941 MB/s), **TCP →
+`bbr`** + large rmem/wmem, `tcp_fastopen=3`, `somaxconn=4096`, `tcp_max_syn_backlog=512`,
+`vm/page-cluster=0`, `vm/min_free_kbytes=8192`. Full table + revert notes: `docs/KERNELS.md`.
+
 ## Known issues / notes
 
 - SELinux is **permissive** (this ROM/GKI path cannot inject its own policy on 4.19 policydb
