@@ -1,0 +1,6 @@
+id=perftune
+name=PerfTune A-tier
+version=v1
+versionCode=1
+author=opencode
+description=Runtime tuning: TCP bbr (cubic fallback), fastopen=3, swappiness=60, vfs_cache_pressure=100, readahead=512, KSM=1000

@@ -1,8 +1,28 @@
-# KernelSU for Redmi 9A (dandelion) — MT6765 / 4.19.275
+# Build journal — KernelSU for Redmi 9A (dandelion), MT6765 / 4.19.275
 
-GKI-less (non-GKI) direct integration of [KernelSU v3.3.0](https://github.com/tiann/KernelSU)
-into the stock MediaTek 4.19.275 kernel, flashed into the boot image.
-Built and verified on a **Redmi 9A (dandelion, Helio G25 / MT6765)** running an **Android 13/14 GSI** (phh treble).
+Author's chronological dev journal for this kernel project. **Not a user guide** —
+for current install/build instructions see the root [README](../README.md).
+
+## Journal index
+
+| build | focus | release |
+|---|---|---|
+| ksu#43 | KernelSU v3.3.0 integration (first working) | v1.0.0 (`boot_ksu43_load.img`) |
+| #46 / #47 | fsnotify crash fix, ksu_cred init / enforcing verified | — (interim) |
+| **#48b** | "complete kernel": modules + runtime tuning (`kernelmods`) | **v48b** |
+| **#61** | io_uring + BFQ default + KSM + THP(always) + HZ=1000 | — |
+| **#62** | TCP BBR default congestion control | **v62** (current) |
+
+Everything below is the historical #43 → #48b narrative; the #61/#62
+performance work is summarized in the README `## Performance builds` section.
+
+---
+
+## (original #43–#48b write-up)
+
+KernelSU v3.3.0 integrated into the stock MediaTek 4.19.275 kernel, flashed
+into the boot image. Built and verified on a **Redmi 9A (dandelion, Helio G25
+/ MT6765)** running an **Android 13/14 GSI** (phh treble).
 
 **#48b status: fully working — "complete kernel" build.** SELinux stays **permissive** for full
 developer freedom (capabilities fully open, root = `uid=0(root)` under `u:r:su:s0`); the kernel
@@ -34,7 +54,7 @@ across reboots. Full root with all capabilities, plus optional enforcing if you 
   enforcing kernel can `filp_open()` ksud (`open ksud err: -13` root cause, fixed)
 - **fsnotify crash fix** (`#46`) — `pkg_observer.c` guards `file_name < PAGE_SIZE` (the 4.19
   old-callback `strlen` crash that bootlooped the #45 build)
-- **reboot magic（fd install）** — `reboot(MAGIC1, MAGIC2, 0, &fdout)` installs the KernelSU fd
+- **reboot magic (fd install)** — `reboot(MAGIC1, MAGIC2, 0, &fdout)` installs the KernelSU fd
 - **No kprobes / no ftrace syscall tracepoints required** — syscall table slots are patched
   directly (this stock MTK kernel has no `CONFIG_FTRACE_SYSCALLS`)
 - **KernelSU Manager grants persist across reboots**
@@ -97,16 +117,9 @@ It is the same GKI-patched v3.3.0 app, **re-signed with v2-only scheme**
 (`apksigner --v2-signing-enabled true --v3-signing-enabled false`), so the kernel recognizes it.
 `reboot()` after installing it if the crown was refused earlier.
 
-## Repository layout
-
-```
-flash/            boot image .sha256 and flash scripts  (image itself: Releases page)
-apk/              required resign (v2-only) Manager app .sha256     (apk itself: Releases page)
-patches/          ksu43_kernelsu.patch  — clean upstream diff (KernelSU v3.3.0 -> ours, 7 files)
-patches/final-kernel-patches/  — the 7 modified files in full
-scripts/          local build scripts (toolchain/tool paths are machine-specific — adjust)
-docs/KERNELS.md   full build/log/troubleshooting notes (author's journal)
-```
+> Repository layout note: the #43-era layout described for this part of the
+> journal (single flat `scripts/`) has since been reorganized — see the root
+> README `## Repository layout` for the current one.
 
 ## Runtime performance tuning (safe, no-kernel-rebuild)
 
@@ -133,17 +146,9 @@ Rollback: pre-tune script is kept on-device as `/data/adb/modules/kernelmods/ser
 
 ## Building from source
 
-See `docs/KERNELS.md` for the full story. Short version:
-
-```bash
-export PATH=/usr/lib/llvm-18/bin:$PATH
-bash scripts/build_ksu25_v2.sh   # expects a MediaTek 4.19 source tree at $OSRC
-```
-
-- Kernel: 4.19.275-mt6765 (Mi MT6765 kernel source)
-- Toolchain: Ubuntu clang/LLD 18
-- Image packing: `scripts/pack_boot.py` (page_size 2048, header v2, ramdisk replaced)
-- cmdline gains `androidboot.selinux=permissive` (see `scripts/perm_cmdline.py`)
+See the root README (`## Building from source`) for the current build flow.
+Historical note: the original #43–#48b builds used `scripts/build_ksu25_v2.sh`
+(pre-#61 layout), replaced by the `scripts/build/` + `scripts/pack/` split for #61/#62.
 
 ## Kernel changes vs upstream KernelSU v3.3.0
 

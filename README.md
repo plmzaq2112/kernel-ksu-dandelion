@@ -17,7 +17,7 @@ across reboots.
   once `/data` is ready (the v3 Manager never delivers the `post-fs-data` REPORT_EVENT on this
   GSI setup, so upstream relies on it and loses all grants on reboot — this build self-loads)
 - **su redirection (sucompat)** patched in at 90s post-boot to survive the early exec storm
-- **reboot magic（fd install）** — `reboot(MAGIC1, MAGIC2, 0, &fdout)` installs the KernelSU fd
+- **reboot magic (fd install)** — `reboot(MAGIC1, MAGIC2, 0, &fdout)` installs the KernelSU fd
 - **No kprobes / no ftrace syscall tracepoints required** — syscall table slots are patched
   directly (this stock MTK kernel has no `CONFIG_FTRACE_SYSCALLS`)
 - **KernelSU Manager grants persist across reboots**
@@ -37,18 +37,19 @@ across reboots.
 
 ## Download
 
-Grab the release assets from the **Releases** page of this repo:
-`boot_ksu43_load.img` (+ `.sha256`), `KernelSU_v3.3.0_32601_gkipatched_v2only.apk` (+ `.idsig`).
+Grab the latest release assets from the **Releases** page of this repo — for kernel #62 that is
+`boot-4.19.275-mt6765-ksu53-perm.img` (+ `.sha256`), together with the required Manager app
+`KernelSU_v3.3.0_32601_gkipatched_v2only.apk` (+ `.idsig`).
 Place the image next to `flash/flash.bat` / `flash/flash.sh` (they look for it there).
 
 ## Install
 
 1. Unlock bootloader.
-2. On Windows: `flash\flash.bat` — or do it by hand (Linux/macOS `flash\flash.sh`),
+2. On Windows: run `flash\flash.bat` — or do it by hand (Linux/macOS `flash/flash.sh`),
    or adb-only:
    ```bash
    readlink /dev/block/by-name/boot        # expect /dev/block/mmcblk0p33   (verify on YOUR device!)
-   adb push boot_ksu43_load.img /data/local/tmp/boot.img
+   adb push boot-4.19.275-mt6765-ksu53-perm.img /data/local/tmp/boot.img
    adb root && adb wait-for-device
    adb shell dd if=/data/local/tmp/boot.img of=/dev/block/mmcblk0p33 bs=4096 conv=fsync
    adb reboot
@@ -72,27 +73,32 @@ It is the same GKI-patched v3.3.0 app, **re-signed with v2-only scheme**
 ## Repository layout
 
 ```
-flash/            boot_ksu43_load.img.sha256 and flash scripts  (image itself: Releases page)
-apk/              required resign (v2-only) Manager app .sha256     (apk itself: Releases page)
-patches/          ksu43_kernelsu.patch  — clean upstream diff (KernelSU v3.3.0 -> ours, 7 files)
-patches/final-kernel-patches/  — the 7 modified files in full
-scripts/          local build scripts (toolchain/tool paths are machine-specific — adjust)
-docs/KERNELS.md   full build/log/troubleshooting notes (author's journal)
+flash/                   flash scripts + boot image sha256        (image itself: Releases page)
+apk/                     required v2-only Manager app .sha256     (apk itself: Releases page)
+scripts/build/           kernel build / config scripts (build53, sync, defconfig, ...)
+scripts/pack/            boot-image packing tools (pack53, pack_boot.py, perm_cmdline.py, ...)
+scripts/recover_boot.ps1 Windows fastboot restore helper
+modules/perftune/        KernelSU module — runtime performance tuning (see below)
+patches/ksu43_kernelsu.patch      KernelSU v3.3.0 -> ours diff (7 files)
+patches/final-kernel-patches/     the 7 modified files in full
+patches/perf-patches/             perf/stability changes vs vendor tree (#61/#62)
+docs/KERNELS.md          full build/log/troubleshooting notes (author's journal)
 ```
 
 ## Building from source
 
-See `docs/KERNELS.md` for the full story. Short version:
-
 ```bash
 export PATH=/usr/lib/llvm-18/bin:$PATH
-bash scripts/build_ksu25_v2.sh   # expects a MediaTek 4.19 source tree at $OSRC
+bash scripts/build/sync.sh          # enable DEBUG_KERNEL + KALLSYMS_ALL, run olddefconfig
+bash scripts/build/build53.sh       # make Image.gz (kernel #62; config spot-check below)
+bash scripts/pack/pack53.sh         # pack -> boot-4.19.275-mt6765-ksu53-perm.img
 ```
 
 - Kernel: 4.19.275-mt6765 (Mi MT6765 kernel source)
 - Toolchain: Ubuntu clang/LLD 18
-- Image packing: `scripts/pack_boot.py` (page_size 2048, header v2, ramdisk replaced)
-- cmdline gains `androidboot.selinux=permissive` (see `scripts/perm_cmdline.py`)
+- Image packing: `scripts/pack/pack_boot.py` (page_size 2048, header v2, ramdisk replaced)
+- cmdline gains `androidboot.selinux=permissive` (see `scripts/pack/perm_cmdline.py`)
+- Scripts embed machine-specific paths — adjust `SRC`/`O` for your checkout.
 
 ## Kernel changes vs upstream KernelSU v3.3.0
 
@@ -108,15 +114,29 @@ bash scripts/build_ksu25_v2.sh   # expects a MediaTek 4.19 source tree at $OSRC
 | `runtime/boot_event.c` | no force-crown on boot_completed (tracker handles it) |
 | `core/init.c` | early `track_throne(false)` run; `MODULE_IMPORT_NS` gated to ≥5.4 (4.19 has no symbol namespaces) |
 
-## Runtime performance tuning (no-rebuild)
+## Performance builds (#61 / #62)
 
-The kernel's compile-time performance features are intentionally left at their **verified #48b
-defaults** — re-enabling THP/KVM/JUMP_LABEL/CE-crypto requires a vmlinux rebuild that boots-panics
-with this KernelSU direct-syscall-table setup (`write to read-only memory`). Gains are shipped as
-**runtime-only add-ons**, auto-applied by the `kernelmods` KSU module at boot (log
-`/data/adb/kernelmods.log`): **eMMC scheduler → `kyber`** (sequential read 294→941 MB/s), **TCP →
-`bbr`** + large rmem/wmem, `tcp_fastopen=3`, `somaxconn=4096`, `tcp_max_syn_backlog=512`,
-`vm/page-cluster=0`, `vm/min_free_kbytes=8192`. Full table + revert notes: `docs/KERNELS.md`.
+In addition to the KSU integration, the kernel is performance-tuned:
+
+| build | additions over upstream stock kernel |
+|---|---|
+| **#61** | io_uring (backported `fs/io_uring.c` + `CONFIG_IO_URING`), **BFQ** as default I/O scheduler, **KSM**, **THP**(`always`), **SCHED_AUTOGROUP**, **HZ=1000** |
+| **#62** | **TCP BBR** compiled in and set as default congestion control — all #61 features retained |
+
+`patches/perf-patches/` documents the 4 config/thermal changes vs the vendor tree
+(BFQ default choice, io_uring Kconfig, mtk_ts_bts/dctm log demotion).
+
+Runtime tuning is applied at boot without a rebuild by the **perftune** KernelSU module
+(`modules/perftune/` — install by copying to `/data/adb/modules/perftune/`):
+
+| setting | value |
+|---|---|
+| TCP congestion control | **bbr** (falls back to cubic if unavailable) |
+| TCP FastOpen | `3` (client + server) |
+| vm.swappiness | `60` |
+| vm.vfs_cache_pressure | `100` |
+| read_ahead_kb (mmcblk0) | `512` |
+| KSM pages_to_scan | `1000` |
 
 ## Known issues / notes
 
@@ -127,29 +147,6 @@ with this KernelSU direct-syscall-table setup (`write to read-only memory`). Gai
 - If you later see "all grants lost", that was this missing-self-load bug — it is fixed here.
   To validate a fresh boot, `adb shell dmesg | grep load_allow_uid`.
 - This is provided **as-is**, root access, flashing and everything else at your own risk.
-
-## Performance enhancement builds (#61 / #62)
-
-Beyond the KSU#43 integration, this repo now tracks performance-tuned kernel builds:
-
-- **#61** — io_uring (backported `fs/io_uring.c` + CONFIG_IO_URING), BFQ as default
-  I/O scheduler, KSM, THP(`always`), SCHED_AUTOGROUP, HZ=1000.
-- **#62** — TCP **BBR** as default congestion control (`tcp_bbr` built in). All #61
-  features retained.
-
-New scripts in `scripts/`: `build53.sh` (build #62), `pack53.sh` (pack boot image),
-`sync.sh` (injects `DEBUG_KERNEL`/`KALLSYMS_ALL`, runs olddefconfig), `defconfig.sh`,
-`olddefconfig.sh`, `syncconfig_test.sh`.
-
-`patches/perf-patches/` documents the 4 config/thermal changes vs the vendor tree
-(BFQ default choice, io_uring Kconfig, mtk_ts_bts/dctm log demotion).
-
-`scripts/perftune/` is a KernelSU module applying runtime tuning at boot (no rebuild):
-**BBR** congestion, `tcp_fastopen=3`, `swappiness=60`, `vfs_cache_pressure=100`,
-`read_ahead_kb=512`, KSM `pages_to_scan=1000`. Install by copying to `/data/adb/modules/perftune/`.
-
-Built with Ubuntu clang/LLD 18 (`llvm-18`). Boot image retains header v2 / page 2048
-layout; flash via `fastboot flash boot <img>` — release images on the Releases page.
 
 ## Credits / license
 
