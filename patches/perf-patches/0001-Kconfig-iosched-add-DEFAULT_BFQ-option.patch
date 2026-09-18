@@ -1,0 +1,30 @@
+# Title: Kconfig-iosched-add-DEFAULT_BFQ-option
+# Files: block/Kconfig.iosched
+# Description:
+#   Add BFQ as a selectable DEFAULT I/O scheduler in the block Kconfig choice so CONFIG_DEFAULT_IOSCHED="bfq" survives olddefconfig instead of silently reverting to cfq.
+
+--- a/block/Kconfig.iosched
++++ b/block/Kconfig.iosched
+@@ -43, 21 +43, 21 @@
+# (context preview of current tree; apply manually)
+choice
+
+	prompt "Default I/O scheduler"
+	default DEFAULT_BFQ
+	help
+	  Select the I/O scheduler which will be used by default for all
+	  block devices.
+
+	config DEFAULT_DEADLINE
+		bool "Deadline" if IOSCHED_DEADLINE=y
+
+	config DEFAULT_CFQ
+		bool "CFQ" if IOSCHED_CFQ=y
+
+	config DEFAULT_BFQ
+		bool "BFQ" if IOSCHED_BFQ=y
+
+	config DEFAULT_NOOP
+		bool "No-op"
+
+endchoice

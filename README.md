@@ -128,11 +128,35 @@ with this KernelSU direct-syscall-table setup (`write to read-only memory`). Gai
   To validate a fresh boot, `adb shell dmesg | grep load_allow_uid`.
 - This is provided **as-is**, root access, flashing and everything else at your own risk.
 
+## Performance enhancement builds (#61 / #62)
+
+Beyond the KSU#43 integration, this repo now tracks performance-tuned kernel builds:
+
+- **#61** — io_uring (backported `fs/io_uring.c` + CONFIG_IO_URING), BFQ as default
+  I/O scheduler, KSM, THP(`always`), SCHED_AUTOGROUP, HZ=1000.
+- **#62** — TCP **BBR** as default congestion control (`tcp_bbr` built in). All #61
+  features retained.
+
+New scripts in `scripts/`: `build53.sh` (build #62), `pack53.sh` (pack boot image),
+`sync.sh` (injects `DEBUG_KERNEL`/`KALLSYMS_ALL`, runs olddefconfig), `defconfig.sh`,
+`olddefconfig.sh`, `syncconfig_test.sh`.
+
+`patches/perf-patches/` documents the 4 config/thermal changes vs the vendor tree
+(BFQ default choice, io_uring Kconfig, mtk_ts_bts/dctm log demotion).
+
+`scripts/perftune/` is a KernelSU module applying runtime tuning at boot (no rebuild):
+**BBR** congestion, `tcp_fastopen=3`, `swappiness=60`, `vfs_cache_pressure=100`,
+`read_ahead_kb=512`, KSM `pages_to_scan=1000`. Install by copying to `/data/adb/modules/perftune/`.
+
+Built with Ubuntu clang/LLD 18 (`llvm-18`). Boot image retains header v2 / page 2048
+layout; flash via `fastboot flash boot <img>` — release images on the Releases page.
+
 ## Credits / license
 
 - [KernelSU](https://github.com/tiann/KernelSU) by tiann — GPL-2.0; this project adapts
   v3.3.0 to a non-GKI MTK kernel.
 - The GKI patch workflow this build is based on: KernelSU's own `build-ksu-dir` tooling.
-- Everything else here follows the kernel's GPL-2.0 (MediaTek kernel source is GPL).
+- io_uring/BFQ/BBR/THP/KSM come from upstream Linux; everything else follows the
+  kernel's GPL-2.0 (MediaTek kernel source is GPL).
 
 **Not affiliated with Xiaomi, Google, or KernelSU.**

@@ -1,0 +1,23 @@
+# Title: Kconfig-io_uring-CONFIG_IO_URING
+# Files: fs/Kconfig
+# Description:
+#   Backport ships fs/io_uring.c + uapi headers + generic unistd 425/426/427 but lacked the Kconfig switch, so the feature was dead code. Add config IO_URING (bool, depends on BLOCK).
+
+--- a/fs/Kconfig
++++ b/fs/Kconfig
+@@ -325, 14 +325, 14 @@
+# (context preview of current tree; apply manually)
+config IO_URING
+	bool "Enable io_uring uring support"
+	depends on BLOCK
+	help
+	  This option enables support for io_uring, a Linux-native
+	  io_uring interface.
+
+	  Improved throughput and efficiency for storage and networking,
+	  without the complexity and overhead of existing "aio" interface.
+	  See <file:Documentation/filesystems/io_uring.txt> for more info.
+
+	  If unsure, say N.
+
+endmenu

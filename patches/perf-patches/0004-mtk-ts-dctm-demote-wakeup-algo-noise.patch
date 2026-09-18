@@ -1,0 +1,12 @@
+# Title: mtk-ts-dctm-demote-wakeup-algo-noise
+# Files: drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_dctm.c
+# Description:
+#   Same TZ/BTS lifetime noise source emitted from the DCTM zone; demote to pr_debug.
+
+--- a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_dctm.c
++++ b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_dctm.c
+@@ -247, 3 +247, 3 @@
+# (context preview of current tree; apply manually)
+	ret = wakeup_ta_algo(TA_DCTM_DRC_CFG);
+	mtkts_dctm_printk("%s : ret %d\n", __func__, ret);
+}

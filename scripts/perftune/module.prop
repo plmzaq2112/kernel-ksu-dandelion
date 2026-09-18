@@ -1,0 +1,6 @@
+id=perftune
+name=PerfTune A-tier
+version=v1
+versionCode=1
+author=opencode
+description=Runtime tuning: TCP cubic, swappiness=60, vfs_cache_pressure=100

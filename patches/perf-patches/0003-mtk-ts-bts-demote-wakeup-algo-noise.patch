@@ -1,0 +1,22 @@
+# Title: mtk-ts-bts-demote-wakeup-algo-noise
+# Files: drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_bts.c
+# Description:
+#   Demote periodic "[Thermal/TZ/BTS]wakeup_ta_algo out of memory" messages from pr_notice to pr_debug. Spams ~every 5s during early boot; not an error condition.
+
+--- a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_bts.c
++++ b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_bts.c
+@@ -674, 13 +674, 13 @@
+# (context preview of current tree; apply manually)
+		t_ret2 = wakeup_ta_algo(TA_CATMPLUS_TTJ);
+
+	if (t_ret2 < 0)
+		pr_debug("[Thermal/TZ/BTS]wakeup_ta_algo out of memory\n");
+
+	bts_cur_temp = t_ret;
+
+	if (t_ret > 40000)	/* abnormal high temp */
+		mtkts_bts_printk("T_AP=%d\n", t_ret);
+
+	mtkts_bts_dprintk("[%s] T_AP, %d\n", __func__, t_ret);
+	return t_ret;
+}
