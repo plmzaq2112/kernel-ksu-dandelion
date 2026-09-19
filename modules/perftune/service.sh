@@ -1,68 +1,125 @@
 #!/system/bin/sh
-# perftune: runtime tuning, applied in stable phase to avoid competing with
-# the early-boot storm (zygote fork burst ~ first 60-90s spikes CPU/swap).
+# =============================================================================
+# perftune v2 - unified runtime tuning module for Redmi 9A (dandelion) kernel
+# #61/#62 builds (io_uring/BFQ/KSM/THP/HZ1000/BBR). Applied once the early-boot
+# storm has subsided so it never competes with the zygote fork burst.
+#
+# Sections:
+#   1. wait for boot + storm window
+#   2. rollback handling (if /data/perftune.rollback exists)
+#   3. first-run snapshot of stock defaults to /data/perftune-orig
+#   4. apply all knobs (net / memory / dirty / storage / KSM / THP)
+#   5. status log
+# =============================================================================
 MODDIR=${0%/*}
+LOG=/data/perftune.log
+ORIG=/data/perftune-orig
+ROLLBACK=/data/perftune.rollback
 
-# 1) wait for boot, 2) then let the startup storm subside before tuning.
+say() { echo "[perftune] $*" >> "$LOG"; }
+
+# --- 1. wait for boot + storm window -------------------------------------
 until [ "$(getprop sys.boot_completed)" = "1" ]; do sleep 2; done
-echo "perftune: boot_completed, waiting for startup storm to subside..." >> /data/perftune.log
+say "boot_completed, waiting for startup storm to subside..."
 sleep 150
 
-# TCP congestion control: prefer BBR (available from kernel #62); fall back to
-# cubic on older kernels. Available checked live via tcp_available_congestion_control.
+# --- 2. rollback: restore stock values and exit --------------------------
+if [ -f "$ROLLBACK" ]; then
+    say "rollback requested, restoring snapshot from $ORIG"
+    if [ -f "$ORIG" ]; then
+        while IFS='=' read -r k v; do
+            [ -z "$k" ] && continue
+            case "$k" in
+                read_ahead_mmc)  [ -w /sys/block/mmcblk0/queue/read_ahead_kb ] && echo "$v" > /sys/block/mmcblk0/queue/read_ahead_kb ;;
+                sched_mmc)       [ -w /sys/block/mmcblk0/queue/scheduler ] && echo "$v" > /sys/block/mmcblk0/queue/scheduler ;;
+                ksm_run)         [ -w /sys/kernel/mm/ksm/run ] && echo "$v" > /sys/kernel/mm/ksm/run ;;
+                ksm_pages)       [ -w /sys/kernel/mm/ksm/pages_to_scan ] && echo "$v" > /sys/kernel/mm/ksm/pages_to_scan ;;
+                khugepaged_scan) [ -w /sys/kernel/mm/transparent_hugepage/khugepaged/scan_sleep_millisecs ] && echo "$v" > /sys/kernel/mm/transparent_hugepage/khugepaged/scan_sleep_millisecs ;;
+                *)               sysctl -w "$k=$v" 2>/dev/null ;;
+            esac
+        done < "$ORIG"
+    fi
+    rm -f "$ROLLBACK"
+    say "rollback complete"
+    exit 0
+fi
+
+# --- 3. first-run snapshot of stock defaults ------------------------------
+if [ ! -f "$ORIG" ]; then
+    {
+        echo "net.ipv4.tcp_congestion_control=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)"
+        echo "net.ipv4.tcp_fastopen=$(sysctl -n net.ipv4.tcp_fastopen 2>/dev/null)"
+        echo "net.core.somaxconn=$(sysctl -n net.core.somaxconn 2>/dev/null)"
+        echo "net.ipv4.tcp_max_syn_backlog=$(sysctl -n net.ipv4.tcp_max_syn_backlog 2>/dev/null)"
+        echo "net.ipv4.tcp_rmem=$(sysctl -n net.ipv4.tcp_rmem 2>/dev/null)"
+        echo "net.ipv4.tcp_wmem=$(sysctl -n net.ipv4.tcp_wmem 2>/dev/null)"
+        echo "net.ipv4.tcp_window_scaling=$(sysctl -n net.ipv4.tcp_window_scaling 2>/dev/null)"
+        echo "net.ipv4.tcp_timestamps=$(sysctl -n net.ipv4.tcp_timestamps 2>/dev/null)"
+        echo "net.ipv4.tcp_sack=$(sysctl -n net.ipv4.tcp_sack 2>/dev/null)"
+        echo "vm.swappiness=$(sysctl -n vm.swappiness 2>/dev/null)"
+        echo "vm.min_free_kbytes=$(sysctl -n vm.min_free_kbytes 2>/dev/null)"
+        echo "vm.vfs_cache_pressure=$(sysctl -n vm.vfs_cache_pressure 2>/dev/null)"
+        echo "vm.page-cluster=$(sysctl -n vm.page-cluster 2>/dev/null)"
+        echo "vm.dirty_ratio=$(sysctl -n vm.dirty_ratio 2>/dev/null)"
+        echo "vm.dirty_background_ratio=$(sysctl -n vm.dirty_background_ratio 2>/dev/null)"
+        echo "read_ahead_mmc=$(cat /sys/block/mmcblk0/queue/read_ahead_kb 2>/dev/null)"
+        echo "sched_mmc=$(cat /sys/block/mmcblk0/queue/scheduler 2>/dev/null | sed 's/.*\[\(.*\)\].*/\1/')"
+        echo "ksm_run=$(cat /sys/kernel/mm/ksm/run 2>/dev/null)"
+        echo "ksm_pages=$(cat /sys/kernel/mm/ksm/pages_to_scan 2>/dev/null)"
+        echo "khugepaged_scan=$(cat /sys/kernel/mm/transparent_hugepage/khugepaged/scan_sleep_millisecs 2>/dev/null)"
+    } > "$ORIG"
+    say "saved stock snapshot to $ORIG"
+fi
+
+# --- 4. apply all knobs ----------------------------------------------------
+
+# --- network / TCP ---
 if grep -qw bbr /proc/sys/net/ipv4/tcp_available_congestion_control 2>/dev/null; then
     CC=bbr
 else
     CC=cubic
 fi
 sysctl -w net.ipv4.tcp_congestion_control=$CC
+sysctl -w net.ipv4.tcp_fastopen=3
+sysctl -w net.core.somaxconn=4096
+sysctl -w net.ipv4.tcp_max_syn_backlog=512
+sysctl -w net.ipv4.tcp_rmem='4096 87380 6291456'
+sysctl -w net.ipv4.tcp_wmem='4096 16384 4194304'
+sysctl -w net.ipv4.tcp_window_scaling=1
+sysctl -w net.ipv4.tcp_timestamps=1
+sysctl -w net.ipv4.tcp_sack=1
 
-# TCP Fast Open: 3 = enable for both client and server side.
-# Shaves one RTT on connection establishment (network acceleration, zero risk)
-if [ "$(cat /proc/sys/net/ipv4/tcp_fastopen 2>/dev/null)" != "3" ]; then
-    echo 3 > /proc/sys/net/ipv4/tcp_fastopen
+# --- memory / swap ---
+sysctl -w vm.swappiness=100
+sysctl -w vm.min_free_kbytes=16384
+sysctl -w vm.vfs_cache_pressure=100
+sysctl -w vm.page-cluster=0
+sysctl -w vm.dirty_background_ratio=3
+sysctl -w vm.dirty_ratio=15
+
+# --- I/O scheduler: prefer BFQ (kernel #61 built-in), fall through silently ---
+if [ -w /sys/block/mmcblk0/queue/scheduler ]; then
+    SCHED=$(cat /sys/block/mmcblk0/queue/scheduler)
+    if echo "$SCHED" | grep -qw bfq; then
+        echo bfq > /sys/block/mmcblk0/queue/scheduler
+    fi
 fi
 
-# Swap: swappiness 60 -> 100 for 4GB RAM + 2GB zram: keep anonymous pages
-# compressible in zram (cheap, RAM-backed) instead of trimming file cache
-# under pressure. page-cluster=0 (single-page) matches zram random access.
-sysctl -w vm.swappiness=100
-
-# Low-memory watermark: stock 7711 kB leaves almost no free pages before
-# kswapd triggers; 16384 kB gives the allocator headroom for bursts and
-# avoids order>0 allocation stalls / OOM front-line.
-sysctl -w vm.min_free_kbytes=16384
-
-# VFS cache: 200 releases dentry/inode caches too aggressively (hurts cold
-# app start). 100 = balanced.
-sysctl -w vm.vfs_cache_pressure=100
-
-# Readahead: 128KB -> 512KB sequential-read prefetch; faster cold app start.
+# --- storage readahead ---
 [ -w /sys/block/mmcblk0/queue/read_ahead_kb ] && \
     echo 512 > /sys/block/mmcblk0/queue/read_ahead_kb
 
-# Dirty pages: eMMC has no SLC write cache to absorb burst flushes, so cap
-# dirty pages low to avoid periodic writeback storms (5%/20% stock = up to
-# ~200MB/780MB of accumulated dirty data on 4GB RAM).
-sysctl -w vm.dirty_background_ratio=3
-sysctl -w vm.dirty_ratio=15
-DR=$(cat /proc/sys/vm/dirty_ratio)
-DB=$(cat /proc/sys/vm/dirty_background_ratio)
+# --- KSM (needs run=1 to actually merge) ---
+[ -w /sys/kernel/mm/ksm/run ] && echo 1 > /sys/kernel/mm/ksm/run
+[ -w /sys/kernel/mm/ksm/pages_to_scan ] && echo 1000 > /sys/kernel/mm/ksm/pages_to_scan
 
-# KSM: pages_to_scan alone does nothing until run=1 (stock has run=0 = off).
-# Enable merging + keep a moderate scan rate to dedup mmap-heavy apps.
-if [ -w /sys/kernel/mm/ksm/run ]; then
-    echo 1 > /sys/kernel/mm/ksm/run
-fi
-if [ -w /sys/kernel/mm/ksm/pages_to_scan ]; then
-    echo 1000 > /sys/kernel/mm/ksm/pages_to_scan
-fi
-
-# THP khugepaged: default 10s scan interval amortizes the hugepage work;
-# double it since KSM+THP together would otherwise keep waking during app
-# churn. Hugepage formation still works, just less eagerly.
+# --- THP khugepaged: halve scan wakeups ---
 [ -w /sys/kernel/mm/transparent_hugepage/khugepaged/scan_sleep_millisecs ] && \
     echo 20000 > /sys/kernel/mm/transparent_hugepage/khugepaged/scan_sleep_millisecs
 
-# log
-echo "[perftune] applied $CC tcp_fastopen=3 swappiness=100 minfree=16384 cachepressure=100 dirty=$DR/$DB readahead=512 ksm=1000" >> /data/perftune.log
+# --- 5. status + current-memory log ---
+MA=$(awk '/MemAvailable/{print $2}' /proc/meminfo)
+SWU=$(awk '/zram0/{print $4}' /proc/swaps)
+PS=$(awk '/^some/{printf "%s/%s/%s",$3,$4,$5}' /proc/pressure/memory)
+say "applied CC=$CC fastopen=3 swappiness=100 minfree=16384 dirty=15/3 sched=bfq readahead=512 ksm=1 khugepaged=20000"
+say "status free=${MA}kB zram_used=${SWU}kB psi_some=$PS"

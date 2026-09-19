@@ -127,16 +127,25 @@ In addition to the KSU integration, the kernel is performance-tuned:
 (BFQ default choice, io_uring Kconfig, mtk_ts_bts/dctm log demotion).
 
 Runtime tuning is applied at boot without a rebuild by the **perftune** KernelSU module
-(`modules/perftune/` — install by copying to `/data/adb/modules/perftune/`):
+(`modules/perftune/` — install by copying to `/data/adb/modules/perftune/`).
+It waits past the boot storm (`sys.boot_completed` + 150 s), snapshots stock defaults to
+`/data/perftune-orig`, applies all knobs, and supports rollback: `touch /data/perftune.rollback` + reboot.
 
 | setting | value |
 |---|---|
 | TCP congestion control | **bbr** (falls back to cubic if unavailable) |
 | TCP FastOpen | `3` (client + server) |
-| vm.swappiness | `60` |
+| net.core.somaxconn / tcp_max_syn_backlog | `4096` / `512` |
+| TCP rmem / wmem | `4096 87380 6291456` / `4096 16384 4194304` |
+| vm.swappiness | `100` |
+| vm.min_free_kbytes | `16384` |
 | vm.vfs_cache_pressure | `100` |
+| vm.page-cluster | `0` |
+| vm.dirty_ratio / dirty_background_ratio | `15` / `3` |
+| mmcblk0 I/O scheduler | **bfq** (kernel built-in) |
 | read_ahead_kb (mmcblk0) | `512` |
-| KSM pages_to_scan | `1000` |
+| KSM | `run=1`, pages_to_scan `1000` (merging actually on) |
+| THP khugepaged scan_sleep | `20000` ms (halved wakeups) |
 
 ## Known issues / notes
 
