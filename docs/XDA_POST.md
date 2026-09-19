@@ -27,8 +27,11 @@ allowlist is loaded back into memory by the kernel itself.
 - **#61** — io_uring, BFQ default I/O scheduler, KSM, THP (always),
   SCHED_AUTOGROUP, HZ=1000
 - **#62** — TCP BBR compiled in and set as default congestion control
-- Runtime tuning via the **perftune** module (BBR, tcp_fastopen=3, swappiness=60,
-  vfs_cache_pressure=100, read_ahead_kb=512, KSM=1000) — copy to `/data/adb/modules/perftune/`
+- Runtime tuning via the **perftune** module (`modules/perftune/`): applied after
+  the boot storm — TCP BBR + fastopen=3, somaxconn=4096, swappiness=100,
+  min_free_kbytes=16384, dirty 15/3, page-cluster=0, BFQ scheduler,
+  read_ahead_kb=512, KSM run=1, THP khugepaged halved, CFS 1ms/1.5ms/8ms +
+  MTK uclamp fg=50. Snapshot/rollback via `/data/perftune.rollback`.
 
 **Downloads** (Releases: https://github.com/plmzaq2112/kernel-ksu-dandelion/releases)
 - `boot-4.19.275-mt6765-ksu53-perm.img` (+ .sha256) — kernel **#62**
