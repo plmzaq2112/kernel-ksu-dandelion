@@ -18,8 +18,15 @@ if [ "$(cat /proc/sys/net/ipv4/tcp_fastopen 2>/dev/null)" != "3" ]; then
     echo 3 > /proc/sys/net/ipv4/tcp_fastopen
 fi
 
-# Swap: swappiness 80 -> 60 reduces thrashing with zram, snappier foreground
-sysctl -w vm.swappiness=60
+# Swap: swappiness 60 -> 100 for 4GB RAM + 2GB zram: keep anonymous pages
+# compressible in zram (cheap, RAM-backed) instead of trimming file cache
+# under pressure. page-cluster=0 (single-page) matches zram random access.
+sysctl -w vm.swappiness=100
+
+# Low-memory watermark: stock 7711 kB leaves almost no free pages before
+# kswapd triggers; 16384 kB gives the allocator headroom for bursts and
+# avoids order>0 allocation stalls / OOM front-line.
+sysctl -w vm.min_free_kbytes=16384
 
 # VFS cache: 200 releases dentry/inode caches too aggressively (hurts cold
 # app start). 100 = balanced.
@@ -36,4 +43,4 @@ if [ -w /sys/kernel/mm/ksm/pages_to_scan ]; then
 fi
 
 # log
-echo "[perftune] applied $CC tcp_fastopen=3 swappiness=60 cachepressure=100 readahead=512 ksm=1000" >> /data/perftune.log
+echo "[perftune] applied $CC tcp_fastopen=3 swappiness=100 minfree=16384 cachepressure=100 readahead=512 ksm=1000" >> /data/perftune.log
