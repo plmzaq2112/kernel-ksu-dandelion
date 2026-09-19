@@ -1,7 +1,12 @@
 #!/system/bin/sh
-# perftune: A-tier runtime tuning, applied late in boot (failsafe)
+# perftune: runtime tuning, applied in stable phase to avoid competing with
+# the early-boot storm (zygote fork burst ~ first 60-90s spikes CPU/swap).
 MODDIR=${0%/*}
+
+# 1) wait for boot, 2) then let the startup storm subside before tuning.
 until [ "$(getprop sys.boot_completed)" = "1" ]; do sleep 2; done
+echo "perftune: boot_completed, waiting for startup storm to subside..." >> /data/perftune.log
+sleep 150
 
 # TCP congestion control: prefer BBR (available from kernel #62); fall back to
 # cubic on older kernels. Available checked live via tcp_available_congestion_control.
@@ -52,6 +57,12 @@ fi
 if [ -w /sys/kernel/mm/ksm/pages_to_scan ]; then
     echo 1000 > /sys/kernel/mm/ksm/pages_to_scan
 fi
+
+# THP khugepaged: default 10s scan interval amortizes the hugepage work;
+# double it since KSM+THP together would otherwise keep waking during app
+# churn. Hugepage formation still works, just less eagerly.
+[ -w /sys/kernel/mm/transparent_hugepage/khugepaged/scan_sleep_millisecs ] && \
+    echo 20000 > /sys/kernel/mm/transparent_hugepage/khugepaged/scan_sleep_millisecs
 
 # log
 echo "[perftune] applied $CC tcp_fastopen=3 swappiness=100 minfree=16384 cachepressure=100 dirty=$DR/$DB readahead=512 ksm=1000" >> /data/perftune.log

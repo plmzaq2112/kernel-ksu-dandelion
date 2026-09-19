@@ -3,4 +3,4 @@ name=PerfTune A-tier
 version=v1
 versionCode=1
 author=opencode
-description=Runtime tuning: TCP bbr (cubic fallback), fastopen=3, swappiness=100, min_free_kbytes=16384, dirty 15/3, KSM on, readahead=512, vfs_cache_pressure=100
+description=Runtime tuning (delayed past boot storm): TCP bbr, fastopen=3, swappiness=100, min_free_kbytes=16384, dirty 15/3, KSM on, THP khugepaged relaxed, readahead=512
