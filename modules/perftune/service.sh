@@ -36,11 +36,22 @@ sysctl -w vm.vfs_cache_pressure=100
 [ -w /sys/block/mmcblk0/queue/read_ahead_kb ] && \
     echo 512 > /sys/block/mmcblk0/queue/read_ahead_kb
 
-# KSM: speed up dedup scan (default 100 pages/20ms is very conservative).
-# 1000/20ms keeps CPU cost low while deduping mmap-heavy apps far faster.
+# Dirty pages: eMMC has no SLC write cache to absorb burst flushes, so cap
+# dirty pages low to avoid periodic writeback storms (5%/20% stock = up to
+# ~200MB/780MB of accumulated dirty data on 4GB RAM).
+sysctl -w vm.dirty_background_ratio=3
+sysctl -w vm.dirty_ratio=15
+DR=$(cat /proc/sys/vm/dirty_ratio)
+DB=$(cat /proc/sys/vm/dirty_background_ratio)
+
+# KSM: pages_to_scan alone does nothing until run=1 (stock has run=0 = off).
+# Enable merging + keep a moderate scan rate to dedup mmap-heavy apps.
+if [ -w /sys/kernel/mm/ksm/run ]; then
+    echo 1 > /sys/kernel/mm/ksm/run
+fi
 if [ -w /sys/kernel/mm/ksm/pages_to_scan ]; then
     echo 1000 > /sys/kernel/mm/ksm/pages_to_scan
 fi
 
 # log
-echo "[perftune] applied $CC tcp_fastopen=3 swappiness=100 minfree=16384 cachepressure=100 readahead=512 ksm=1000" >> /data/perftune.log
+echo "[perftune] applied $CC tcp_fastopen=3 swappiness=100 minfree=16384 cachepressure=100 dirty=$DR/$DB readahead=512 ksm=1000" >> /data/perftune.log
