@@ -23,6 +23,10 @@ storm** so tuning never competes with the zygote fork burst.
 - **Memory**: swappiness=100, min_free_kbytes=16384, vfs_cache_pressure=100,
   page-cluster=0, dirty_ratio=15, dirty_background_ratio=3.
 - **Storage**: mmcblk0 scheduler → **bfq**, read_ahead_kb=512.
+- **Scheduler (EAS/CFS, merged from sched-eas v1)**: CFS wakeup_granularity 1 ms,
+  min_granularity 1.5 ms, latency 8 ms (faster tap/app response); MTK uclamp
+  foreground floor **50** / background **0** on `eas_ctrl` (fg never starved below
+  mid-frequency, battery-safe).
 - **KSM**: `run=1` (merging actually enabled; stock has run=0 so pages_to_scan alone
   does nothing), pages_to_scan=1000.
 - **THP**: khugepaged `scan_sleep_millisecs` 10000 → **20000** (halve scan wakeups while

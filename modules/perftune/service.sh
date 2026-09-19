@@ -3,6 +3,7 @@
 # perftune v2 - unified runtime tuning module for Redmi 9A (dandelion) kernel
 # #61/#62 builds (io_uring/BFQ/KSM/THP/HZ1000/BBR). Applied once the early-boot
 # storm has subsided so it never competes with the zygote fork burst.
+# Unified from perftune v1 + sched-eas v1 (EAS/CFS responsiveness + MTK uclamp).
 #
 # Sections:
 #   1. wait for boot + storm window
@@ -32,6 +33,11 @@ if [ -f "$ROLLBACK" ]; then
             case "$k" in
                 read_ahead_mmc)  [ -w /sys/block/mmcblk0/queue/read_ahead_kb ] && echo "$v" > /sys/block/mmcblk0/queue/read_ahead_kb ;;
                 sched_mmc)       [ -w /sys/block/mmcblk0/queue/scheduler ] && echo "$v" > /sys/block/mmcblk0/queue/scheduler ;;
+                sched_wakeup)    [ -w /proc/sys/kernel/sched_wakeup_granularity_ns ] && echo "$v" > /proc/sys/kernel/sched_wakeup_granularity_ns ;;
+                sched_min)       [ -w /proc/sys/kernel/sched_min_granularity_ns ] && echo "$v" > /proc/sys/kernel/sched_min_granularity_ns ;;
+                sched_latency)   [ -w /proc/sys/kernel/sched_latency_ns ] && echo "$v" > /proc/sys/kernel/sched_latency_ns ;;
+                eas_fg_uclamp)   [ -w /proc/perfmgr/boost_ctrl/eas_ctrl/debug_fg_uclamp_min ] && echo "$v" > /proc/perfmgr/boost_ctrl/eas_ctrl/debug_fg_uclamp_min ;;
+                eas_bg_uclamp)   [ -w /proc/perfmgr/boost_ctrl/eas_ctrl/debug_bg_uclamp_min ] && echo "$v" > /proc/perfmgr/boost_ctrl/eas_ctrl/debug_bg_uclamp_min ;;
                 ksm_run)         [ -w /sys/kernel/mm/ksm/run ] && echo "$v" > /sys/kernel/mm/ksm/run ;;
                 ksm_pages)       [ -w /sys/kernel/mm/ksm/pages_to_scan ] && echo "$v" > /sys/kernel/mm/ksm/pages_to_scan ;;
                 khugepaged_scan) [ -w /sys/kernel/mm/transparent_hugepage/khugepaged/scan_sleep_millisecs ] && echo "$v" > /sys/kernel/mm/transparent_hugepage/khugepaged/scan_sleep_millisecs ;;
@@ -62,6 +68,11 @@ if [ ! -f "$ORIG" ]; then
         echo "vm.page-cluster=$(sysctl -n vm.page-cluster 2>/dev/null)"
         echo "vm.dirty_ratio=$(sysctl -n vm.dirty_ratio 2>/dev/null)"
         echo "vm.dirty_background_ratio=$(sysctl -n vm.dirty_background_ratio 2>/dev/null)"
+        echo "sched_wakeup=$(cat /proc/sys/kernel/sched_wakeup_granularity_ns 2>/dev/null)"
+        echo "sched_min=$(cat /proc/sys/kernel/sched_min_granularity_ns 2>/dev/null)"
+        echo "sched_latency=$(cat /proc/sys/kernel/sched_latency_ns 2>/dev/null)"
+        echo "eas_fg_uclamp=$(cat /proc/perfmgr/boost_ctrl/eas_ctrl/debug_fg_uclamp_min 2>/dev/null)"
+        echo "eas_bg_uclamp=$(cat /proc/perfmgr/boost_ctrl/eas_ctrl/debug_bg_uclamp_min 2>/dev/null)"
         echo "read_ahead_mmc=$(cat /sys/block/mmcblk0/queue/read_ahead_kb 2>/dev/null)"
         echo "sched_mmc=$(cat /sys/block/mmcblk0/queue/scheduler 2>/dev/null | sed 's/.*\[\(.*\)\].*/\1/')"
         echo "ksm_run=$(cat /sys/kernel/mm/ksm/run 2>/dev/null)"
@@ -109,6 +120,22 @@ fi
 [ -w /sys/block/mmcblk0/queue/read_ahead_kb ] && \
     echo 512 > /sys/block/mmcblk0/queue/read_ahead_kb
 
+# --- scheduler (EAS/CFS responsiveness, merged from sched-eas v1) ---
+# wakeup/min/latency: waking task preempts sooner, quicker turnover on tap/scroll
+[ -w /proc/sys/kernel/sched_wakeup_granularity_ns ] && \
+    echo 1000000 > /proc/sys/kernel/sched_wakeup_granularity_ns
+[ -w /proc/sys/kernel/sched_min_granularity_ns ] && \
+    echo 1500000 > /proc/sys/kernel/sched_min_granularity_ns
+[ -w /proc/sys/kernel/sched_latency_ns ] && \
+    echo 8000000 > /proc/sys/kernel/sched_latency_ns
+
+# --- MTK uclamp floor: foreground never starved below 50% util (EAS) ---
+# MTK scale is 0-100; keeps fg apps at mid-frequency minimum, removes
+# 400MHz idle deficit on touch/scroll without forcing max freq (battery-safe).
+EAS=/proc/perfmgr/boost_ctrl/eas_ctrl
+[ -w $EAS/debug_fg_uclamp_min ] && echo 50 > $EAS/debug_fg_uclamp_min
+[ -w $EAS/debug_bg_uclamp_min ] && echo 0 > $EAS/debug_bg_uclamp_min
+
 # --- KSM (needs run=1 to actually merge) ---
 [ -w /sys/kernel/mm/ksm/run ] && echo 1 > /sys/kernel/mm/ksm/run
 [ -w /sys/kernel/mm/ksm/pages_to_scan ] && echo 1000 > /sys/kernel/mm/ksm/pages_to_scan
@@ -121,5 +148,6 @@ fi
 MA=$(awk '/MemAvailable/{print $2}' /proc/meminfo)
 SWU=$(awk '/zram0/{print $4}' /proc/swaps)
 PS=$(awk '/^some/{printf "%s/%s/%s",$3,$4,$5}' /proc/pressure/memory)
-say "applied CC=$CC fastopen=3 swappiness=100 minfree=16384 dirty=15/3 sched=bfq readahead=512 ksm=1 khugepaged=20000"
+FG=$(cat /proc/perfmgr/boost_ctrl/eas_ctrl/debug_fg_uclamp_min 2>/dev/null)
+say "applied CC=$CC fastopen=3 swappiness=100 minfree=16384 dirty=15/3 sched=bfq readahead=512 ksm=1 khugepaged=20000 eas_fg=$FG gran=1ms/1.5ms/8ms"
 say "status free=${MA}kB zram_used=${SWU}kB psi_some=$PS"

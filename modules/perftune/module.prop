@@ -1,6 +1,6 @@
 id=perftune
-name=PerfTune v2 (unified runtime tuning)
-version=v2
-versionCode=2
+name=PerfTune v3 (unified runtime tuning)
+version=v3
+versionCode=3
 author=opencode
-description=Unified tuning: TCP bbr+congestion, fastopen=3, somaxconn=4096, swappiness=100, min_free#=16384, dirty 15/3, page-cluster=0, BFQ sched, readahead=512, KSM on, THP khugepaged relaxed. Applied after boot storm. rollback: touch /data/perftune.rollback + reboot
+description=Unified tuning: TCP bbr+fastopen=3, somaxconn=4096, swappiness=100, min_free_kbytes=16384, dirty 15/3, page-cluster=0, BFQ sched, readahead=512, KSM on, THP khugepaged relaxed, EAS uclamp fg=50 + CFS gran 1ms/1.5ms/8ms. Applied after boot storm; snapshot+rollback via /data/perftune.rollback

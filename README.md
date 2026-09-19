@@ -144,6 +144,8 @@ It waits past the boot storm (`sys.boot_completed` + 150 s), snapshots stock def
 | vm.dirty_ratio / dirty_background_ratio | `15` / `3` |
 | mmcblk0 I/O scheduler | **bfq** (kernel built-in) |
 | read_ahead_kb (mmcblk0) | `512` |
+| CFS wakeup / min_gran / latency | `1ms` / `1.5ms` / `8ms` (EAS responsiveness) |
+| MTK uclamp fg / bg floor | `50` / `0` (eas_ctrl, fg never starved) |
 | KSM | `run=1`, pages_to_scan `1000` (merging actually on) |
 | THP khugepaged scan_sleep | `20000` ms (halved wakeups) |
 
