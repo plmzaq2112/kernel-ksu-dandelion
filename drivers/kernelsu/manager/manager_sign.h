@@ -19,3 +19,11 @@ typedef struct {
 } apk_sign_key_t;
 
 #endif /* MANAGER_SIGN_H */
+
+// Custom (our manager builds)
+#define EXPECTED_SIZE_CUSTOM 0x34c
+#define EXPECTED_HASH_CUSTOM "bbe8fc8d1e038c7f80865efbcd832ecc39da4a4228b4fb4d6e0a6750e9ddd7b8"
+
+// Custom 2 (BakaSU manager build, ksu-delivery)
+#define EXPECTED_SIZE_CUSTOM2 0x369
+#define EXPECTED_HASH_CUSTOM2 "15c4f23538db7de39a41a33c39fea77f218cc89b251a1ed085916ee36394d9be"

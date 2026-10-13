@@ -18,6 +18,7 @@ kernelsu-objs += manager/manager.o
 endif
 
 kernelsu-objs += compat/kernel_compat.o
+kernelsu-objs += compat/base_hook_stubs.o
 kernelsu-objs += infra/su_mount_ns.o
 kernelsu-objs += infra/seccomp_cache.o
 kernelsu-objs += infra/file_wrapper.o
@@ -73,7 +74,10 @@ include $(KSU_SRC)/tools/ddk_compatible.mk
 endif
 
 $(shell cd $(KSU_SRC); [ -f ../.git/shallow ] && $(GIT_BIN) fetch --unshallow)
-KSU_LOCAL_VERSION := $(shell cd $(KSU_SRC); $(GIT_BIN) rev-list --count HEAD)
+# Source is an archive (no .git); freeze local version so KSU_VERSION=35002
+# (BakaSU feature level of this tree: manager Natives.kt MINIMAL_SUPPORTED_KERNEL=35002).
+# Formula: 30000 + 4302 + 700 = 35002. Satisfies tiann manager minimum (32513).
+KSU_LOCAL_VERSION := 4302
 KSU_VERSION := $(shell expr 30000 + $(KSU_LOCAL_VERSION) + 700)
 
 KSU_TAG_NAME    := $(shell cd $(KSU_SRC); $(GIT_BIN) describe --abbrev=0 --tags 2>/dev/null || echo "v4.1.0")
