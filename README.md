@@ -1,4 +1,56 @@
-# KernelSU for Redmi 9A (dandelion) — MT6765 / 4.19.275
+# KernelSU for Redmi 9A (dandelion) — MT6765
+
+Two non-GKI KernelSU lineages for the stock MediaTek 4.19 kernel on dandelion:
+
+| Lineage | Kernel | Method | Status |
+|---|---|---|---|
+| **#64 bakasu** (current) | 4.19.325 | BakaSU manual-hook, UAPI v5, **SELinux enforcing**, official manager | **Latest — see [v64 release](https://github.com/plmzaq2112/kernel-ksu-dandelion/releases/tag/v64)** |
+| #62/#63 v11ksu (legacy) | 4.19.275 | tiann v3.3.0 syscall-table patch, SELinux permissive, v2-only manager | Archived below |
+
+---
+
+## #64 bakasu (current, 4.19.325)
+
+GKI-less direct integration of the [BakaSU](https://github.com/Baka-SU/BakaSU) kernel
+component (manual-hook mode, UAPI v5) into the stock MediaTek 4.19.325 kernel.
+Built and verified on a **Redmi 9A (dandelion, Helio G25 / MT6765)** on the stock ROM.
+
+**Status: fully working.** On-device validated: root (uid 0, full capabilities), SELinux
+enforcing with setenforce toggle, modules, allowlist persistence across reboots, and the
+**official tiann KernelSU Manager v3.3.1 (32680)** works without any re-signing
+(`35002-5` green in manager).
+
+### Features
+
+- **Manual source-level hooks** — 6 `#ifdef CONFIG_KSU` call sites + LSM `task_fix_setuid`
+  auto fd-injection; no kprobes, no ftrace syscall tracepoints, no syscall table patching
+- **Official manager, no re-signing** — multi-manager signature whitelist (tiann official,
+  KOWX712, BakaSU, gkipatched); manager fd injected automatically at zygote fork
+- **SELinux enforcing** — unlike the legacy lineage, no permissive cmdline needed
+- **KSU_VERSION 35002**, UAPI v5 — compatible with tiann upstream manager and ksud
+
+### Download / Flash
+
+Grab `boot-4.19.325-dandelion-ksu-35002.img` (+ `.sha256`) and
+`KernelSU_v3.3.1_32680-release.apk` (+ `.sha256`) from the
+[v64 release](https://github.com/plmzaq2112/kernel-ksu-dandelion/releases/tag/v64).
+
+```
+fastboot flash boot boot-4.19.325-dandelion-ksu-35002.img
+fastboot reboot
+```
+
+Or `dd` via adb root — see `flash/flash.sh` / `flash/flash.bat` (defaults to the #64 image).
+Install the attached official manager APK; it connects automatically.
+
+### Source
+
+Branch `bakasu` on [android_kernel_mt6765](https://github.com/plmzaq2112/android_kernel_mt6765/tree/bakasu)
+— commits `6c4259889` (integrate BakaSU) + `1394abb7e` (version/signature freeze).
+
+---
+
+## #62/#63 v11ksu (legacy, 4.19.275)
 
 GKI-less (non-GKI) direct integration of [KernelSU v3.3.0](https://github.com/tiann/KernelSU)
 into the stock MediaTek 4.19.275 kernel, flashed into the boot image.

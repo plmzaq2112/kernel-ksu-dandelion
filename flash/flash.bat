@@ -1,9 +1,9 @@
 @echo off
 rem Flash a boot image on Redmi 9A (dandelion, MT6765)
 rem Requires: adb on PATH, unlocked bootloader, adb root working.
-rem Usage: flash.bat [boot.img]  — defaults to the latest #62 release image.
+rem Usage: flash.bat [boot.img]  — defaults to the latest #64 release image.
 setlocal
-set "IMG=%~dp0boot-4.19.275-mt6765-ksu53-perm.img"
+set "IMG=%~dp0boot-4.19.325-dandelion-ksu-35002.img"
 set "BOOT_DEV=/dev/block/mmcblk0p33"
 
 echo == push ==

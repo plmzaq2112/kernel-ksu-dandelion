@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Flash a boot image on Redmi 9A (dandelion, MT6765)
 # Requires: adb, a device with unlocked bootloader and adb root working.
-# Usage: flash.sh [boot.img]   — defaults to the latest #62 release image.
+# Usage: flash.sh [boot.img]   — defaults to the latest #64 release image.
 set -euo pipefail
-IMG="${1:-$(dirname "$0")/boot-4.19.275-mt6765-ksu53-perm.img}"
+IMG="${1:-$(dirname "$0")/boot-4.19.325-dandelion-ksu-35002.img}"
 BOOT_DEV="/dev/block/mmcblk0p33"
 
 echo "== verify image =="
