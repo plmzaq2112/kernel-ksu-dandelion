@@ -50,6 +50,11 @@ ccflags-y += -I$(srctree)/security/selinux -I$(srctree)/security/selinux/include
 ccflags-y += -I$(srctree)/$(src) -I$(srctree)/$(src)/include
 ccflags-y += -I$(src) -I$(src)/include
 
+# Google backport: 4.19 Android common has sidtab reverse-lookup hash table
+# (verified present: security/selinux/ss/services.c defines context_add_hash)
+# https://android-review.googlesource.com/q/Iead2a1d90731ae24fefec2a40af5ffdc457ac916
+ccflags-y += -DKSU_COMPAT_HAS_CONTEXT_ADD_HASH
+
 obj-$(CONFIG_KSU) += kernelsu.o
 
 REPO_NAME := BakaSU
