@@ -18,6 +18,15 @@ performance work is summarized in the README `## Performance builds` section.
 
 ---
 
+## Current line: v65 / BakaSU manual-hook (2026-10)
+
+The project has moved to a new lineage. The **current** kernel is **v65**:
+kernel **4.19.325-dandelion-ksu** (PREEMPT, HZ=1000), **BakaSU manual-hook**
+(UAPI v5, KSU_VERSION 35002), SELinux **Enforcing**, manager v3.3.1 (32680).
+This supersedes the 4.19.275 lineage documented below. See
+[`docs/v65-test-report.md`](v65-test-report.md) and
+[`docs/v65-kernel-mount-evaluation.md`](v65-kernel-mount-evaluation.md).
+
 ## (original #43–#48b write-up)
 
 KernelSU v3.3.0 integrated into the stock MediaTek 4.19.275 kernel, flashed
